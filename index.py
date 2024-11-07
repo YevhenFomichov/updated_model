@@ -6,15 +6,20 @@ import matplotlib.pyplot as plt
 from scipy.io import wavfile
 import os
 
-# Загрузка модели Keras
-model = tf.keras.models.load_model('model.keras')
+# Функция для загрузки модели с кэшированием
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model('model.keras')
+
+# Загрузка модели
+model = load_model()
 
 # Функция для загрузки аудиофайла
 def load_audio_file(file, sr=44100):
     try:
         audio, sample_rate = librosa.load(file, sr=sr)
     except Exception as e:
-        st.error(f"Ошибка с librosa: {e}. Пробую scipy...")
+        st.error(f"Ошибка с librosа: {e}. Пробую scipy...")
         # Сброс указателя файла на начало
         file.seek(0)
         sample_rate, audio = wavfile.read(file)
@@ -128,3 +133,4 @@ uploaded_file = st.file_uploader("Upload an audio file", type=["wav"])
 
 if uploaded_file is not None:
     process_and_plot(uploaded_file, model, samplerate_target=44100, samplesize_ms=50, threshold=threshold, smoothing_window=smoothing_window)
+

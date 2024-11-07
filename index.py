@@ -52,7 +52,7 @@ def smooth_predictions(predictions, window_size):
         return predictions  
     return np.convolve(predictions, np.ones(window_size)/window_size, mode='valid')
 
-def process_and_plot(file_path, model, samplerate_target, samplesize_ms, mirror_value=44, shift_value=24):
+def process_and_plot(file_path, model, samplerate_target, samplesize_ms, threshold, smoothing_window):
     frame_length = samplesize_ms / 1000
 
     audio, sample_rate = load_audio_file(file_path, sr=samplerate_target)
@@ -61,44 +61,21 @@ def process_and_plot(file_path, model, samplerate_target, samplesize_ms, mirror_
     features_tensor = tf.convert_to_tensor(features, dtype=tf.float32)
     predictions = model.predict(features_tensor).flatten()
 
-    # Создание предварительных предсказаний с учетом зеркального отображения
-    pre_smoothed_predictions = np.where(
-        predictions < mirror_value,
-        2 * mirror_value - predictions,  # Отзеркаливание значений ниже mirror_value
-        predictions  # Оставляем без изменений значения >= mirror_value
-    )
+    smoothed_predictions = smooth_predictions(predictions, smoothing_window)
 
-    # Сглаживание предварительных предсказаний
-    smoothed_predictions = smooth_predictions(pre_smoothed_predictions, SMOOTHING_WINDOW)
-
-    # Корректировка длины предсказаний после сглаживания
-    length_diff = len(predictions) - len(smoothed_predictions)
-    offset = length_diff // 2
-
-    # Применение сдвига к сглаженным значениям, которые были отзеркалены
-    original_predictions_trimmed = predictions[offset: offset + len(smoothed_predictions)]
-    mask_smoothed = original_predictions_trimmed < mirror_value
-    shifted_predictions = smoothed_predictions.copy()
-    shifted_predictions[mask_smoothed] -= shift_value
-
-    # Вычисление среднего по сглаженным значениям после сдвига, учитывая порог
-    filtered_predictions = shifted_predictions[shifted_predictions > THRESHOLD]
+    filtered_predictions = smoothed_predictions[smoothed_predictions > threshold]
     if len(filtered_predictions) > 0:
         average_value = np.mean(filtered_predictions)
     else:
         average_value = 0  
 
-    # Временные оси для графиков
     time_axis_original = np.linspace(0, len(audio) / sample_rate, num=len(predictions))
     time_axis_smoothed = np.linspace(0, len(audio) / sample_rate, num=len(smoothed_predictions))
 
-    # Построение графиков
     fig, ax = plt.subplots()
     ax.plot(time_axis_original, predictions, label='Original Predicted Flow Rate L/min', alpha=0.5)
-    ax.plot(time_axis_smoothed, smoothed_predictions, label='Smoothed Flow Rate L/min', linewidth=2)
-    ax.plot(time_axis_smoothed, shifted_predictions, label='Shifted Flow Rate L/min', linewidth=2, linestyle='--')
-    ax.axhline(y=average_value, color='r', linestyle='--', label=f'Average Flow Rate L/min (>{THRESHOLD})')
-    ax.axhline(y=mirror_value, color='g', linestyle='--', label=f'Mirror Value (baseline at {mirror_value})')
+    ax.plot(time_axis_smoothed, smoothed_predictions, label='Smoothed Predicted Flow Rate L/min', linewidth=2)
+    ax.axhline(y=average_value, color='r', linestyle='--', label=f'Average Flow Rate L/min (>{threshold})')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Flow Rate L/min')
     ax.legend()
@@ -106,10 +83,9 @@ def process_and_plot(file_path, model, samplerate_target, samplesize_ms, mirror_
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     ax.set_title(f'Predictions for {base_name}')
 
-    plt.show()
+    st.pyplot(fig)
 
-    print(f'Predicted average for {base_name} with threshold {THRESHOLD} and smoothing window {SMOOTHING_WINDOW}:')
-    print(average_value)
+    st.write(f'Predicted average for {base_name} with threshold {threshold} and smoothing window {smoothing_window}: {average_value:.2f}')
 
 # Streamlit app
 st.title('Audio Analysis using Deep Learning Model')

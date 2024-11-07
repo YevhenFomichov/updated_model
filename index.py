@@ -10,14 +10,17 @@ import os
 model = tf.keras.models.load_model('model.keras')
 
 # Функция для загрузки аудиофайла
-def load_audio_file(file_path, sr=44100):
+def load_audio_file(file, sr=44100):
     try:
-        audio, sample_rate = librosa.load(file_path, sr=sr)
+        audio, sample_rate = librosa.load(file, sr=sr)
     except Exception as e:
         st.error(f"Ошибка с librosa: {e}. Пробую scipy...")
-        sample_rate, audio = wavfile.read(file_path)
+        # Сброс указателя файла на начало
+        file.seek(0)
+        sample_rate, audio = wavfile.read(file)
+        audio = audio.astype(np.float32)
         if sample_rate != sr:
-            audio = librosa.resample(audio.astype(float), orig_sr=sample_rate, target_sr=sr)
+            audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=sr)
             sample_rate = sr
     return audio, sample_rate
 
@@ -36,6 +39,8 @@ def extract_features(audio, sample_rate, frame_length, feature_type):
 
         if feature_type == 'raw':
             feature = frame.reshape(-1, 1)
+        else:
+            raise NotImplementedError(f"Feature type {feature_type} not implemented")
         features.append(feature)
 
     features = np.array(features)
@@ -52,10 +57,10 @@ def smooth_predictions(predictions, window_size):
         return predictions  
     return np.convolve(predictions, np.ones(window_size)/window_size, mode='valid')
 
-def process_and_plot(file_path, model, samplerate_target, samplesize_ms, mirror_value=44, shift_value=24, threshold=0.5, smoothing_window=4):
+def process_and_plot(uploaded_file, model, samplerate_target, samplesize_ms, mirror_value=44, shift_value=24, threshold=0.5, smoothing_window=4):
     frame_length = samplesize_ms / 1000
 
-    audio, sample_rate = load_audio_file(file_path, sr=samplerate_target)
+    audio, sample_rate = load_audio_file(uploaded_file, sr=samplerate_target)
     features = extract_features(audio, sample_rate, frame_length, feature_type='raw')
 
     features_tensor = tf.convert_to_tensor(features, dtype=tf.float32)
@@ -103,7 +108,7 @@ def process_and_plot(file_path, model, samplerate_target, samplesize_ms, mirror_
     ax.set_ylabel('Flow Rate L/min')
     ax.legend()
 
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    base_name = os.path.splitext(os.path.basename(uploaded_file.name))[0]
     ax.set_title(f'Predictions for {base_name}')
 
     # Отображение графика в Streamlit
@@ -122,7 +127,4 @@ smoothing_window = st.slider('Set Smoothing Window Size', min_value=1, max_value
 uploaded_file = st.file_uploader("Upload an audio file", type=["wav"])
 
 if uploaded_file is not None:
-    with open("temp_audio.wav", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    process_and_plot("temp_audio.wav", model, samplerate_target=44100, samplesize_ms=50, threshold=threshold, smoothing_window=smoothing_window)
-
+    process_and_plot(uploaded_file, model, samplerate_target=44100, samplesize_ms=50, threshold=threshold, smoothing_window=smoothing_window)
